@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "caching_proxy_sever",
+    "cli_caching_proxy",
+    "tui_caching_proxy",
+]
