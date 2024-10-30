@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+clap = { version = "4.5.20", features = ["derive"] }
+assert_cmd = "2.0"
+caching_proxy_server = { path = "../caching_proxy_server" }
+tokio = { version = "1", features = ["full"] }
