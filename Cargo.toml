@@ -4,3 +4,4 @@ members = [
     "cli_caching_proxy",
     "tui_caching_proxy",
 ]
+resolver = "2"
