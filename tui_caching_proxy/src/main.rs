@@ -9,15 +9,19 @@ use ratatui::{
     },
     Terminal,
 };
+use tokio::sync::mpsc;
 
 mod app;
 mod ui;
 use crate::{
-    app::{App, CurrentScreen, RunServer},
+    app::{App, CurrentScreen, StartUpCachingServer},
     ui::ui,
 };
 
-fn main() -> Result<(), Box<dyn Error>> {
+
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     // setup terminal
     enable_raw_mode()?;
     let mut stderr = io::stderr(); // This is a special case. Normally using stdout is fine
@@ -27,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // create app and run it
     let mut app = App::new();
-    let res = run_app(&mut terminal, &mut app);
+    let _res = run_app(&mut terminal, &mut app).await;
 
     // restore terminal
     disable_raw_mode()?;
@@ -37,19 +41,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
-
-    if let Ok(do_print) = res {
-        if do_print {
-            app.print_json()?;
-        }
-    } else if let Err(err) = res {
-        println!("{err:?}");
-    }
-
     Ok(())
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<bool> {
+async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<bool> {
     loop {
         terminal.draw(|f| ui(f, app))?;
 
@@ -60,64 +55,65 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
             match app.current_screen {
                 CurrentScreen::Main => match key.code {
                     KeyCode::Char('e') => {
-                        app.current_screen = CurrentScreen::RunServer;
-                        app.run_server = Some(RunServer::Port);
+                        app.current_screen = CurrentScreen::Editing;
+                        app.request_information = Some(StartUpCachingServer::Port);
                     }
                     KeyCode::Char('q') => {
-                        app.current_screen = CurrentScreen::Exiting;
-                    }
-                    _ => {}
-                },
-                CurrentScreen::Exiting => match key.code {
-                    KeyCode::Char('y') => {
                         return Ok(true);
                     }
-                    KeyCode::Char('n') | KeyCode::Char('q') => {
-                        return Ok(false);
-                    }
                     _ => {}
                 },
-                CurrentScreen::RunServer if key.kind == KeyEventKind::Press => {
+                CurrentScreen::Editing if key.kind == KeyEventKind::Press => {
                     match key.code {
                         KeyCode::Enter => {
-                            if let Some(editing) = &app.run_server {
+                            if let Some(editing) = &app.request_information {
                                 match editing {
-                                    RunServer::Port => {
-                                        app.run_server = Some(RunServer::Origin);
+                                    StartUpCachingServer::Port => {
+                                        app.request_information = Some(StartUpCachingServer::Origin);
                                     }
-                                    RunServer::Origin => {
-                                        app.save_key_value();
+                                    StartUpCachingServer::Origin => {
+                                        app.startup_server().await;
                                         app.current_screen = CurrentScreen::Main;
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Backspace => {
-                            if let Some(editing) = &app.run_server {
-                                match editing {
-                                    RunServer::Port => {
-                                        app.port_input.pop();
-                                    }
-                                    RunServer::Origin => {
-                                        app.origin_input.pop();
                                     }
                                 }
                             }
                         }
                         KeyCode::Esc => {
                             app.current_screen = CurrentScreen::Main;
-                            app.run_server = None;
+                            app.request_information= None;
                         }
                         KeyCode::Tab => {
-                            app.save_key_value();
+                            match app.request_information {
+                                Some(StartUpCachingServer::Port) => {
+                                    app.request_information = Some(StartUpCachingServer::Origin);
+                                }
+                                Some(StartUpCachingServer::Origin) => {
+                                    app.request_information = Some(StartUpCachingServer::Port);
+                                }
+                                None => {
+                                    app.request_information = None;
+                                }
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            if let Some(editing) = &app.request_information {
+                                match editing {
+                                    StartUpCachingServer::Port => {
+                                        app.port_input.pop();
+                                    }
+                                    StartUpCachingServer::Origin => {
+                                        app.origin_input.pop();
+                                    }
+                                }
+                            }
                         }
                         KeyCode::Char(value) => {
-                            if let Some(editing) = &app.run_server {
+                            if let Some(editing) = &app.request_information {
                                 match editing {
-                                    RunServer::Port => {
+                                    StartUpCachingServer::Port => {
                                         app.port_input.push(value);
                                     }
-                                    RunServer::Origin => {
+                                    StartUpCachingServer::Origin => {
                                         app.origin_input.push(value);
                                     }
                                 }
