@@ -1,3 +1,27 @@
+//! Caching Proxy Server implementation
+//! 
+//! This module provides a simple caching proxy server that can intercept HTTP requests,
+//! cache responses, and serve cached content when available.
+//!
+//! # Features
+//! 
+//! - HTTP request proxying
+//! - In-memory response caching
+//! - Cache clearing functionality
+//! - Thread-safe cache implementation
+//! 
+//! # Example
+//! 
+//! ```no_run
+//! use caching_proxy_sever::CachingProxyServer;
+//! 
+//! #[tokio::main]
+//! async fn main() {
+//!     let server = CachingProxyServer::new("https://api.example.com".to_string());
+//!     server.run(8080).await.expect("Failed to run server");
+//! }
+//! ```
+
 use once_cell::sync::Lazy;
 use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -5,18 +29,48 @@ use reqwest::Client;
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 
+/// Thread-safe global cache storage for HTTP responses
 static CACHE: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
-
+/// Represents a caching proxy server instance
+/// 
+/// The server intercepts HTTP requests, forwards them to the origin server,
+/// caches the responses, and serves cached content when available.
 #[derive(Debug, Clone)]
 pub struct CachingProxyServer {
+    /// The origin server URL to which requests will be proxied
     origin: String,
 }
 
 impl CachingProxyServer {
+    /// Creates a new instance of the caching proxy server
+    /// 
+    /// # Arguments
+    /// 
+    /// * `origin` - The base URL of the origin server to proxy requests to
+    /// 
+    /// # Returns
+    /// 
+    /// A new `CachingProxyServer` instance
     pub fn new(origin: String) -> Self {
         Self { origin }
     }
+
+    /// Starts the proxy server on the specified port
+    /// 
+    /// # Arguments
+    /// 
+    /// * `port` - The port number to listen on
+    /// 
+    /// # Returns
+    /// 
+    /// Returns `Result<(), Box<dyn std::error::Error>>` indicating success or failure
+    /// 
+    /// # Errors
+    /// 
+    /// This function will return an error if:
+    /// - The server fails to bind to the specified port
+    /// - There are I/O errors during request handling
     pub async fn run(&self, port: u16) -> Result<(), Box<dyn std::error::Error>> {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
         println!("Кэширующий прокси-сервер запущен на порту {}", port);
@@ -36,6 +90,15 @@ impl CachingProxyServer {
         }
     }
 
+    /// Handles an incoming HTTP request
+    /// 
+    /// # Arguments
+    /// 
+    /// * `request` - The raw HTTP request string
+    /// 
+    /// # Returns
+    /// 
+    /// Returns `Option<Vec<u8>>` containing the response bytes if successful
     async fn handle_request(&self, request: String) -> Option<Vec<u8>> {
         let path = parse_path(&request)?;
         let cache_key = format!("{}{}", self.origin, path);
@@ -68,8 +131,10 @@ impl CachingProxyServer {
         }
     }
     
-    
-    
+    /// Clears all cached responses
+    /// 
+    /// This method removes all entries from the cache, effectively
+    /// forcing the server to fetch fresh responses from the origin server
     pub async fn clear_cache(&self) {
         let mut cache = CACHE.lock().await;
         cache.clear();
@@ -77,6 +142,16 @@ impl CachingProxyServer {
     }
 }
 
+/// Formats an HTTP response with the given body and cache status
+/// 
+/// # Arguments
+/// 
+/// * `body` - The response body as bytes
+/// * `cache_status` - The cache status ("HIT" or "MISS")
+/// 
+/// # Returns
+/// 
+/// Returns a `Vec<u8>` containing the complete HTTP response
 fn format_http_response(body: Vec<u8>, cache_status: &str) -> Vec<u8> {
     let mut response = format!(
         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nX-Cache: {}\r\n\r\n",
@@ -88,6 +163,15 @@ fn format_http_response(body: Vec<u8>, cache_status: &str) -> Vec<u8> {
     response
 }
 
+/// Extracts the request path from a raw HTTP request
+/// 
+/// # Arguments
+/// 
+/// * `request` - The raw HTTP request string
+/// 
+/// # Returns
+/// 
+/// Returns `Option<String>` containing the request path if parsing succeeds
 fn parse_path(request: &str) -> Option<String> {
     request.lines().next()?.split_whitespace().nth(1).map(|s| s.to_string())
 }
